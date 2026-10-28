@@ -1,53 +1,73 @@
-import pandas as pd
+"""Reproducible monthly ARIMA forecasting with holdout and seasonal-naive baseline."""
+import argparse
+import json
+from pathlib import Path
 import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
 
-"""
-Flight Demand Forecasting
+def generate_data(seed=42, months=60):
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range("2020-01-01", periods=months, freq="MS")
+    t = np.arange(months)
+    values = 180 + 1.7*t + 22*np.sin(2*np.pi*t/12) + rng.normal(0, 5, months)
+    return pd.Series(values, index=dates, name="passengers", dtype=float)
 
-This script creates a synthetic monthly time series representing flight demand over several
-years. It fits an ARIMA(1,1,1) model to the data and forecasts the next six months.
-The script prints the forecast values and saves a plot comparing historical data with the
-forecast.
+def validate(series):
+    if len(series) < 30 or series.isna().any() or (series < 0).any():
+        raise ValueError("At least 30 valid, nonnegative monthly observations required")
+    if not isinstance(series.index, pd.DatetimeIndex):
+        raise ValueError("Date index required")
+    series = series.sort_index()
+    if not series.index.equals(pd.date_range(series.index.min(), periods=len(series), freq="MS")):
+        raise ValueError("Dates must be consecutive unique month starts")
+    return series
 
-To run this script:
-    python flight_demand_forecasting.py
+def forecast_and_validate(series, horizon=6):
+    series = validate(series)
+    train, test = series.iloc[:-12], series.iloc[-12:]
+    backtest = ARIMA(train, order=(1,1,1)).fit().forecast(steps=12)
+    baseline = train.iloc[-12:].to_numpy()
+    model_mae = float(np.mean(np.abs(test.to_numpy()-backtest.to_numpy())))
+    baseline_mae = float(np.mean(np.abs(test.to_numpy()-baseline)))
+    future = ARIMA(series, order=(1,1,1)).fit().forecast(steps=horizon)
+    return future, {"holdout_months":12, "arima_mae":round(model_mae,3),
+                    "seasonal_naive_mae":round(baseline_mae,3),
+                    "model_beats_baseline":model_mae < baseline_mae}
 
-It will print the forecast and save a plot called `flight_demand_forecast.png` in the
-current directory.
-"""
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=Path, help="Optional monthly CSV: Date,Passengers")
+    parser.add_argument("--output", type=Path, default=Path("outputs"))
+    parser.add_argument("--horizon", type=int, default=6)
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args(argv)
+    if not 1 <= args.horizon <= 24:
+        parser.error("--horizon must be between 1 and 24")
+    if args.input:
+        df = pd.read_csv(args.input)
+        if not {"Date","Passengers"}.issubset(df.columns):
+            parser.error("CSV needs Date and Passengers")
+        series = pd.Series(pd.to_numeric(df["Passengers"]).to_numpy(),
+            index=pd.to_datetime(df["Date"]), name="passengers")
+    else:
+        series = generate_data(args.seed)
+    future, metrics = forecast_and_validate(series, args.horizon)
+    args.output.mkdir(parents=True, exist_ok=True)
+    future.rename("predicted_passengers").to_csv(args.output/"forecast.csv", index_label="Date")
+    (args.output/"backtest_metrics.json").write_text(json.dumps(metrics, indent=2)+"\n",encoding="utf-8")
+    fig, ax = plt.subplots(figsize=(9, 4))
+    series.plot(ax=ax, label="History")
+    future.plot(ax=ax, label="ARIMA", style="--")
+    ax.set(title="Monthly demand (synthetic example)", ylabel="Demand")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(args.output/"flight_demand_forecast.png", dpi=160)
+    plt.close(fig)
+    print(json.dumps(metrics, indent=2))
 
-def main():
-    # Create synthetic monthly flight demand data
-    dates = pd.date_range('2021-01-01', '2024-06-01', freq='MS')
-    np.random.seed(0)
-    trend = np.linspace(100, 200, len(dates))
-    seasonality = 20 * np.sin(np.linspace(0, 4 * np.pi, len(dates)))
-    noise = np.random.normal(0, 5, len(dates))
-    demand = trend + seasonality + noise
-    series = pd.Series(demand, index=dates)
-
-    # Fit ARIMA model
-    model = ARIMA(series, order=(1, 1, 1))
-    result = model.fit()
-
-    # Forecast the next 6 months
-    forecast = result.forecast(steps=6)
-    print("Next 6 months forecast:")
-    print(forecast)
-
-    # Plot historical data and forecast
-    plt.figure()
-    series.plot(label='Historical')
-    forecast.plot(label='Forecast', style='--')
-    plt.legend()
-    plt.title('Flight Demand Forecast')
-    plt.xlabel('Date')
-    plt.ylabel('Demand')
-    plt.tight_layout()
-    plt.savefig('flight_demand_forecast.png')
-    plt.close()
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
