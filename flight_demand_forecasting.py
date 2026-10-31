@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+from numbers import Integral
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -19,6 +20,8 @@ def generate_data(seed=42, months=60):
 def validate(series):
     if len(series) < 30 or series.isna().any() or (series < 0).any():
         raise ValueError("At least 30 valid, nonnegative monthly observations required")
+    if not np.isfinite(series).all():
+        raise ValueError("Passenger counts must be finite")
     if not isinstance(series.index, pd.DatetimeIndex):
         raise ValueError("Date index required")
     series = series.sort_index()
@@ -27,6 +30,8 @@ def validate(series):
     return series
 
 def forecast_and_validate(series, horizon=6):
+    if isinstance(horizon, bool) or not isinstance(horizon, Integral) or not 1 <= horizon <= 24:
+        raise ValueError("horizon must be an integer between 1 and 24")
     series = validate(series)
     train, test = series.iloc[:-12], series.iloc[-12:]
     backtest = ARIMA(train, order=(1,1,1)).fit().forecast(steps=12)
