@@ -1,35 +1,34 @@
 # Flight Demand Forecasting
 
-## Overview
-This repository contains a demonstration of time series forecasting for predicting flight demand. Using a synthetic dataset that emulates daily passenger volumes, the project trains an ARIMA model to forecast future demand. The objective is to illustrate how statistical forecasting techniques can be applied to anticipate passenger numbers and inform capacity planning.
+**Educational portfolio project — default data is synthetic, not real employer, airline, or machinery data.**
 
-## Features
-- **Synthetic time series data**: The script generates a mock dataset representing daily flight demand over a period of time.
-- **Exploratory analysis**: Includes basic statistics and a line plot to visualize demand trends.
-- **ARIMA model**: Implements an AutoRegressive Integrated Moving Average model using the statsmodels library to forecast future demand.
-- **Forecast visualization**: Produces a plot comparing historical demand with forecasted values, saved as an image file (`flight_demand_forecast.png`).
-- **Reusable script**: All code is contained in `flight_demand_forecasting.py` and can be adapted to real datasets.
+Fits ARIMA to monthly demand; checks held-out 12-month error against a seasonal-naive baseline before generating future forecasts.
 
-## Repository Structure
-- `flight_demand_forecasting.py`: Generates synthetic demand data, fits an ARIMA model, and plots the forecast.
-- `flight_demand_forecast.png`: Output plot comparing historical and forecasted demand.
+## Setup (Python 3.11+)
 
-## Technologies Used
-- Python 3 (Pandas, NumPy, Statsmodels, Matplotlib)
-- Git and GitHub for version control and collaboration
+```bash
+python -m venv .venv
+# Windows: .venv\\Scripts\\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+python flight_demand_forecasting.py
+python -m unittest discover -v
+```
 
-## Getting Started
-1. **Clone the repository**:
-   git clone https://github.com/ray1131313131/flight-demand-forecasting
-   cd flight-demand-forecasting
-2. **Install dependencies**:
-   pip install pandas numpy statsmodels matplotlib
-3. **Run the script**:
-   python flight_demand_forecasting.py
-   The script will generate the `flight_demand_forecast.png` image in the project directory.
+The program writes generated artifacts under `outputs/` (ignored by Git). To analyze a local CSV instead, pass `--input your_file.csv`.
 
-## Why This Project
-Forecasting flight demand helps airlines and airports make informed decisions about capacity, scheduling, and resource allocation. This project provides a simple, reproducible example of applying time series modeling to predict demand patterns.
+CSV fields: `Date,Passengers (consecutive months)`. Read the input validation code before substituting your data. No company or customer information should be uploaded without permission.
 
-## License
-This project is released under the MIT License.
+## Technical approach
+
+Fits ARIMA to monthly demand; checks held-out 12-month error against a seasonal-naive baseline before generating future forecasts.
+
+The automated tests cover reproducibility and core validation/metrics. GitHub Actions runs the tests on pushes and pull requests.
+
+## Limits
+
+The generated figures and model scores demonstrate code behavior **only**. They are not real-world business improvements, production deployments, or evidence of predictive accuracy on actual organizations. More real-world validation, data quality checks, and monitoring are needed before deployment.
+
+## Portfolio talking points
+
+This project demonstrates Python data processing, an automated test suite, reproducible dependencies, and technical documentation. Be ready to walk through the source code yourself.
