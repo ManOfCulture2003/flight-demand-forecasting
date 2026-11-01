@@ -61,13 +61,15 @@ def main(argv=None):
     else:
         series = generate_data(args.seed)
     future, metrics = forecast_and_validate(series, args.horizon)
+    data_source = "user-supplied CSV" if args.input else "synthetic"
+    metrics["data_source"] = data_source
     args.output.mkdir(parents=True, exist_ok=True)
     future.rename("predicted_passengers").to_csv(args.output/"forecast.csv", index_label="Date")
     (args.output/"backtest_metrics.json").write_text(json.dumps(metrics, indent=2)+"\n",encoding="utf-8")
     fig, ax = plt.subplots(figsize=(9, 4))
     series.plot(ax=ax, label="History")
     future.plot(ax=ax, label="ARIMA", style="--")
-    ax.set(title="Monthly demand (synthetic example)", ylabel="Demand")
+    ax.set(title=f"Monthly demand ({data_source})", ylabel="Demand")
     ax.legend()
     fig.tight_layout()
     fig.savefig(args.output/"flight_demand_forecast.png", dpi=160)
