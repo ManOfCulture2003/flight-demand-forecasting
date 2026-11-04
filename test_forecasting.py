@@ -27,6 +27,15 @@ class ForecastTests(unittest.TestCase):
                 self.assertEqual(report["data_source"], source)
                 self.assertEqual(ax.get_title(), f"Monthly demand ({source})")
                 self.assertTrue((root / "export" / "flight_demand_forecast.png").is_file())
+                backtest = pd.read_csv(root / "export" / "backtest.csv")
+                self.assertEqual(len(backtest), 12)
+                self.assertEqual(list(backtest.columns), ["Date", "actual_passengers", "arima_prediction", "seasonal_naive_prediction"])
+                expected = generate_data()
+                np.testing.assert_allclose(backtest["actual_passengers"], expected.iloc[-12:])
+                np.testing.assert_allclose(backtest["seasonal_naive_prediction"], expected.iloc[-24:-12])
+                self.assertEqual(backtest["Date"].tolist(), expected.index[-12:].strftime("%Y-%m-%d").tolist())
+                mae = np.abs(backtest["actual_passengers"] - backtest["arima_prediction"]).mean()
+                self.assertAlmostEqual(mae, report["arima_mae"], places=3)
     def test_infinite_demand_rejected_before_model_fit(self):
         series = generate_data()
         series.iloc[0] = np.inf

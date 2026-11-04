@@ -38,10 +38,17 @@ def forecast_and_validate(series, horizon=6):
     baseline = train.iloc[-12:].to_numpy()
     model_mae = float(np.mean(np.abs(test.to_numpy()-backtest.to_numpy())))
     baseline_mae = float(np.mean(np.abs(test.to_numpy()-baseline)))
+    holdout_predictions = pd.DataFrame({
+        "Date": test.index.strftime("%Y-%m-%d"),
+        "actual_passengers": test.to_numpy(),
+        "arima_prediction": backtest.to_numpy(),
+        "seasonal_naive_prediction": baseline,
+    }).to_dict(orient="records")
     future = ARIMA(series, order=(1,1,1)).fit().forecast(steps=horizon)
     return future, {"holdout_months":12, "arima_mae":round(model_mae,3),
                     "seasonal_naive_mae":round(baseline_mae,3),
-                    "model_beats_baseline":model_mae < baseline_mae}
+                    "model_beats_baseline":model_mae < baseline_mae,
+                    "holdout_predictions":holdout_predictions}
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -64,6 +71,7 @@ def main(argv=None):
     data_source = "user-supplied CSV" if args.input else "synthetic"
     metrics["data_source"] = data_source
     args.output.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(metrics.pop("holdout_predictions")).to_csv(args.output/"backtest.csv", index=False)
     future.rename("predicted_passengers").to_csv(args.output/"forecast.csv", index_label="Date")
     (args.output/"backtest_metrics.json").write_text(json.dumps(metrics, indent=2)+"\n",encoding="utf-8")
     fig, ax = plt.subplots(figsize=(9, 4))

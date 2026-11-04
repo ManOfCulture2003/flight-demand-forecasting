@@ -21,6 +21,8 @@ CSV fields: `Date,Passengers (consecutive months)`. Read the input validation co
 
 ## Technical approach
 
+`outputs/backtest.csv` records each of the 12 held-out months, its actual demand, the ARIMA prediction, and the seasonal-naive prediction. Use these rows to inspect errors behind the aggregate MAE scores. These are holdout predictions, separate from the future values in `forecast.csv`.
+
 Fits ARIMA to monthly demand; checks held-out 12-month error against a seasonal-naive baseline before generating future forecasts.
 
 The automated tests cover reproducibility and core validation/metrics. GitHub Actions runs the tests on pushes and pull requests.
