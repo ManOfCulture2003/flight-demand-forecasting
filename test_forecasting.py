@@ -10,6 +10,20 @@ import pandas as pd
 from flight_demand_forecasting import generate_data,validate,forecast_and_validate,main,plt
 
 class ForecastTests(unittest.TestCase):
+    def test_exports_cannot_overwrite_source_csv(self):
+        for name in ('forecast.csv', 'backtest.csv'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                source = root / name
+                generate_data().rename('Passengers').to_csv(source, index_label='Date')
+                original = source.read_bytes()
+                with patch('flight_demand_forecasting.ARIMA') as arima:
+                    with self.assertRaisesRegex(ValueError, 'overwrite'):
+                        main(['--input', str(source), '--output', str(root)])
+                    arima.assert_not_called()
+                self.assertEqual(source.read_bytes(), original)
+                self.assertEqual(list(root.iterdir()), [source])
+
     def test_export_identifies_input_source(self):
         for source in ("synthetic", "user-supplied CSV"):
             with self.subTest(source=source), tempfile.TemporaryDirectory() as folder:

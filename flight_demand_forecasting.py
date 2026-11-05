@@ -60,6 +60,13 @@ def main(argv=None):
     if not 1 <= args.horizon <= 24:
         parser.error("--horizon must be between 1 and 24")
     if args.input:
+        source = args.input.resolve()
+        destinations = [args.output / name for name in (
+            "forecast.csv", "backtest.csv", "backtest_metrics.json", "flight_demand_forecast.png")]
+        if any(path.resolve() == source or (path.exists() and path.samefile(args.input))
+               for path in destinations):
+            raise ValueError("Export would overwrite the input file; choose a different output directory")
+    if args.input:
         df = pd.read_csv(args.input)
         if not {"Date","Passengers"}.issubset(df.columns):
             parser.error("CSV needs Date and Passengers")
