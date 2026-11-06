@@ -10,6 +10,21 @@ import pandas as pd
 from flight_demand_forecasting import generate_data,validate,forecast_and_validate,main,plt
 
 class ForecastTests(unittest.TestCase):
+    def test_holdout_values_cannot_leak_into_backtest_predictions(self):
+        original = generate_data()
+        changed = original.copy()
+        changed.iloc[-12:] += 1000
+        before = changed.copy()
+        _, first = forecast_and_validate(original)
+        _, second = forecast_and_validate(changed)
+        first_rows = pd.DataFrame(first['holdout_predictions'])
+        second_rows = pd.DataFrame(second['holdout_predictions'])
+        for prediction in ('arima_prediction', 'seasonal_naive_prediction'):
+            np.testing.assert_allclose(first_rows[prediction], second_rows[prediction])
+        np.testing.assert_allclose(second_rows['actual_passengers'] - first_rows['actual_passengers'], 1000)
+        self.assertGreater(second['arima_mae'], first['arima_mae'])
+        pd.testing.assert_series_equal(changed, before)
+
     def test_exports_cannot_overwrite_source_csv(self):
         for name in ('forecast.csv', 'backtest.csv'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as folder:
