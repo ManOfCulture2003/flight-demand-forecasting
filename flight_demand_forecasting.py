@@ -66,14 +66,18 @@ def main(argv=None):
         if any(path.resolve() == source or (path.exists() and path.samefile(args.input))
                for path in destinations):
             raise ValueError("Export would overwrite the input file; choose a different output directory")
-    if args.input:
-        df = pd.read_csv(args.input)
-        if not {"Date","Passengers"}.issubset(df.columns):
-            parser.error("CSV needs Date and Passengers")
-        series = pd.Series(pd.to_numeric(df["Passengers"]).to_numpy(),
-            index=pd.to_datetime(df["Date"]), name="passengers")
-    else:
-        series = generate_data(args.seed)
+    try:
+        if args.input:
+            df = pd.read_csv(args.input)
+            if not {"Date","Passengers"}.issubset(df.columns):
+                parser.error("CSV needs Date and Passengers")
+            series = pd.Series(pd.to_numeric(df["Passengers"]).to_numpy(),
+                index=pd.to_datetime(df["Date"]), name="passengers")
+        else:
+            series = generate_data(args.seed)
+        series = validate(series)
+    except (ValueError, OSError) as exc:
+        parser.error(str(exc))
     future, metrics = forecast_and_validate(series, args.horizon)
     data_source = "user-supplied CSV" if args.input else "synthetic"
     metrics["data_source"] = data_source

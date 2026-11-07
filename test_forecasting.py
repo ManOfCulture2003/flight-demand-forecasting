@@ -10,6 +10,24 @@ import pandas as pd
 from flight_demand_forecasting import generate_data,validate,forecast_and_validate,main,plt
 
 class ForecastTests(unittest.TestCase):
+    def test_bad_csv_reports_cli_error_before_fitting(self):
+        cases = ("Date,Passengers\n2026-01-01,bad\n", "Date,Passengers\nnot-a-date,1\n", None)
+        for content in cases:
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                source = root / "input.csv"
+                if content is not None:
+                    source.write_text(content)
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error), patch("flight_demand_forecasting.ARIMA") as arima:
+                    with self.assertRaises(SystemExit) as raised:
+                        main(["--input", str(source), "--output", str(root / "out")])
+                    self.assertEqual(raised.exception.code, 2)
+                    arima.assert_not_called()
+                self.assertIn("error:", error.getvalue())
+                self.assertNotIn("Traceback", error.getvalue())
+                self.assertFalse((root / "out").exists())
+
     def test_holdout_values_cannot_leak_into_backtest_predictions(self):
         original = generate_data()
         changed = original.copy()

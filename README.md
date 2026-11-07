@@ -30,7 +30,3 @@ The automated tests cover reproducibility and core validation/metrics. GitHub Ac
 ## Limits
 
 The generated figures and model scores demonstrate code behavior **only**. They are not real-world business improvements, production deployments, or evidence of predictive accuracy on actual organizations. More real-world validation, data quality checks, and monitoring are needed before deployment.
-
-## Portfolio talking points
-
-This project demonstrates Python data processing, an automated test suite, reproducible dependencies, and technical documentation. Be ready to walk through the source code yourself.
