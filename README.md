@@ -30,3 +30,5 @@ The automated tests cover reproducibility and core validation/metrics. GitHub Ac
 ## Limits
 
 The generated figures and model scores demonstrate code behavior **only**. They are not real-world business improvements, production deployments, or evidence of predictive accuracy on actual organizations. More real-world validation, data quality checks, and monitoring are needed before deployment.
+
+CSV column names must be unique. Duplicate Date or Passengers headers are rejected before fitting, so the forecast cannot silently use the wrong column.

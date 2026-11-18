@@ -10,6 +10,24 @@ import pandas as pd
 from flight_demand_forecasting import generate_data,validate,forecast_and_validate,main,plt
 
 class ForecastTests(unittest.TestCase):
+    def test_duplicate_csv_columns_are_rejected_before_fitting(self):
+        for header in ('Date,Passengers,Passengers', 'Date,Date,Passengers'):
+            with self.subTest(header=header), tempfile.TemporaryDirectory() as folder:
+                source = Path(folder) / 'input.csv'
+                rows = [header]
+                for when, value in generate_data().items():
+                    date = when.strftime('%Y-%m-%d')
+                    rows.append(f'{date},{value},999' if header.endswith('Passengers,Passengers') else f'{date},{date},{value}')
+                source.write_text('\n'.join(rows), encoding='utf-8-sig')
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error), patch('flight_demand_forecasting.ARIMA') as arima:
+                    with self.assertRaises(SystemExit) as raised:
+                        main(['--input', str(source), '--output', str(Path(folder) / 'out')])
+                    self.assertEqual(raised.exception.code, 2)
+                    arima.assert_not_called()
+                self.assertIn('duplicate', error.getvalue().lower())
+                self.assertFalse((Path(folder) / 'out').exists())
+
     def test_bad_csv_reports_cli_error_before_fitting(self):
         cases = ("Date,Passengers\n2026-01-01,bad\n", "Date,Passengers\nnot-a-date,1\n", None)
         for content in cases:
