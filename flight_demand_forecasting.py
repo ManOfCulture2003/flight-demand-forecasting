@@ -68,6 +68,11 @@ def main(argv=None):
             raise ValueError("Export would overwrite the input file; choose a different output directory")
     try:
         if args.input:
+            # Inspect original names before pandas adds suffixes to duplicate headers.
+            header = pd.read_csv(args.input, header=None, nrows=1, dtype=str,
+                                 keep_default_na=False).iloc[0].tolist()
+            if len(header) != len(set(header)):
+                raise ValueError("CSV contains duplicate column names; give each column a unique name")
             df = pd.read_csv(args.input)
             if not {"Date","Passengers"}.issubset(df.columns):
                 parser.error("CSV needs Date and Passengers")
