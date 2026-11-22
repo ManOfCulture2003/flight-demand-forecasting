@@ -1,6 +1,7 @@
 """Reproducible monthly ARIMA forecasting with holdout and seasonal-naive baseline."""
 import argparse
 import json
+from io import BytesIO
 from pathlib import Path
 from numbers import Integral
 import numpy as np
@@ -68,7 +69,12 @@ def main(argv=None):
             raise ValueError("Export would overwrite the input file; choose a different output directory")
     try:
         if args.input:
-            df = pd.read_csv(args.input)
+            # Bound the bytes passed to pandas, including files that grow while read.
+            with args.input.open("rb") as source_file:
+                payload = source_file.read(5 * 1024 * 1024 + 1)
+            if len(payload) > 5 * 1024 * 1024:
+                raise ValueError("Input CSV must be at most 5 MiB; use a smaller monthly dataset")
+            df = pd.read_csv(BytesIO(payload), compression=None)
             if not {"Date","Passengers"}.issubset(df.columns):
                 parser.error("CSV needs Date and Passengers")
             series = pd.Series(pd.to_numeric(df["Passengers"]).to_numpy(),

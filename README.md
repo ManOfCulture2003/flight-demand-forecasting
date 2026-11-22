@@ -19,6 +19,8 @@ The program writes generated artifacts under `outputs/` (ignored by Git). To ana
 
 CSV fields: `Date,Passengers (consecutive months)`. Read the input validation code before substituting your data. No company or customer information should be uploaded without permission.
 
+Input must be a plain, uncompressed CSV of at most 5 MiB. The program checks this limit before parsing or fitting a model. Extract compressed files yourself and check their size first. This keeps accidental large imports from using unbounded input memory; it is not a guarantee about model runtime.
+
 ## Technical approach
 
 `outputs/backtest.csv` records each of the 12 held-out months, its actual demand, the ARIMA prediction, and the seasonal-naive prediction. Use these rows to inspect errors behind the aggregate MAE scores. These are holdout predictions, separate from the future values in `forecast.csv`.
