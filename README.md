@@ -30,3 +30,9 @@ The automated tests cover reproducibility and core validation/metrics. GitHub Ac
 ## Limits
 
 The generated figures and model scores demonstrate code behavior **only**. They are not real-world business improvements, production deployments, or evidence of predictive accuracy on actual organizations. More real-world validation, data quality checks, and monitoring are needed before deployment.
+
+## Forecast uncertainty (new)
+
+`outputs/forecast.csv` now includes `predicted_passengers`, `lower_95`, and `upper_95` for each future month. The chart shades the same 95% ARIMA model interval. These are **model-based intervals**, not guarantees: they rely on ARIMA assumptions and do not account for sudden schedule, policy, economic or route changes. Bounds may fall below zero because the fitted model is unconstrained; do not interpret negative demand as physically possible. The intervals are for future forecasts, not for the 12-month held-out backtest.
+
+Run `python -m unittest discover -s tests -v` to check the interval shape, dates, and CSV/chart outputs.

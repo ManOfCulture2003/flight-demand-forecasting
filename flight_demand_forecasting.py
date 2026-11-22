@@ -29,7 +29,7 @@ def validate(series):
         raise ValueError("Dates must be consecutive unique month starts")
     return series
 
-def forecast_and_validate(series, horizon=6):
+def forecast_and_validate(series, horizon=6, include_intervals=False):
     if isinstance(horizon, bool) or not isinstance(horizon, Integral) or not 1 <= horizon <= 24:
         raise ValueError("horizon must be an integer between 1 and 24")
     series = validate(series)
@@ -44,11 +44,20 @@ def forecast_and_validate(series, horizon=6):
         "arima_prediction": backtest.to_numpy(),
         "seasonal_naive_prediction": baseline,
     }).to_dict(orient="records")
-    future = ARIMA(series, order=(1,1,1)).fit().forecast(steps=horizon)
-    return future, {"holdout_months":12, "arima_mae":round(model_mae,3),
+    prediction = ARIMA(series, order=(1,1,1)).fit().get_forecast(steps=horizon)
+    future = prediction.predicted_mean
+    bounds = prediction.conf_int(alpha=0.05)
+    intervals = pd.DataFrame({"lower_95": bounds.iloc[:, 0].to_numpy(),
+                              "upper_95": bounds.iloc[:, 1].to_numpy()}, index=future.index)
+    if not np.isfinite(intervals.to_numpy()).all():
+        raise ValueError("Model returned non-finite forecast intervals")
+    metrics = {"holdout_months":12, "arima_mae":round(model_mae,3),
                     "seasonal_naive_mae":round(baseline_mae,3),
                     "model_beats_baseline":model_mae < baseline_mae,
                     "holdout_predictions":holdout_predictions}
+    if include_intervals:
+        return future, metrics, intervals
+    return future, metrics
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -78,16 +87,21 @@ def main(argv=None):
         series = validate(series)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
-    future, metrics = forecast_and_validate(series, args.horizon)
+    future, metrics, intervals = forecast_and_validate(series, args.horizon, include_intervals=True)
     data_source = "user-supplied CSV" if args.input else "synthetic"
     metrics["data_source"] = data_source
     args.output.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(metrics.pop("holdout_predictions")).to_csv(args.output/"backtest.csv", index=False)
-    future.rename("predicted_passengers").to_csv(args.output/"forecast.csv", index_label="Date")
+    forecast_table = pd.DataFrame({"predicted_passengers": future.to_numpy(),
+                                   "lower_95": intervals["lower_95"].to_numpy(),
+                                   "upper_95": intervals["upper_95"].to_numpy()}, index=future.index)
+    forecast_table.to_csv(args.output/"forecast.csv", index_label="Date")
     (args.output/"backtest_metrics.json").write_text(json.dumps(metrics, indent=2)+"\n",encoding="utf-8")
     fig, ax = plt.subplots(figsize=(9, 4))
     series.plot(ax=ax, label="History")
     future.plot(ax=ax, label="ARIMA", style="--")
+    ax.fill_between(future.index, intervals["lower_95"], intervals["upper_95"],
+                    alpha=0.2, label="95% model interval")
     ax.set(title=f"Monthly demand ({data_source})", ylabel="Demand")
     ax.legend()
     fig.tight_layout()
