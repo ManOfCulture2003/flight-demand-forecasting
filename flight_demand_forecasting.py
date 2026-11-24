@@ -36,9 +36,13 @@ def forecast_and_validate(series, horizon=6, include_intervals=False):
     series = validate(series)
     train, test = series.iloc[:-12], series.iloc[-12:]
     backtest = ARIMA(train, order=(1,1,1)).fit().forecast(steps=12)
+    if not np.isfinite(backtest.to_numpy()).all():
+        raise ValueError("Model returned non-finite holdout predictions")
     baseline = train.iloc[-12:].to_numpy()
     model_mae = float(np.mean(np.abs(test.to_numpy()-backtest.to_numpy())))
     baseline_mae = float(np.mean(np.abs(test.to_numpy()-baseline)))
+    if not np.isfinite([model_mae, baseline_mae]).all():
+        raise ValueError("Evaluation returned non-finite errors; check the scale of the input data")
     holdout_predictions = pd.DataFrame({
         "Date": test.index.strftime("%Y-%m-%d"),
         "actual_passengers": test.to_numpy(),
@@ -47,6 +51,8 @@ def forecast_and_validate(series, horizon=6, include_intervals=False):
     }).to_dict(orient="records")
     prediction = ARIMA(series, order=(1,1,1)).fit().get_forecast(steps=horizon)
     future = prediction.predicted_mean
+    if not np.isfinite(future.to_numpy()).all():
+        raise ValueError("Model returned non-finite future predictions")
     bounds = prediction.conf_int(alpha=0.05)
     intervals = pd.DataFrame({"lower_95": bounds.iloc[:, 0].to_numpy(),
                               "upper_95": bounds.iloc[:, 1].to_numpy()}, index=future.index)
@@ -93,7 +99,10 @@ def main(argv=None):
         series = validate(series)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
-    future, metrics, intervals = forecast_and_validate(series, args.horizon, include_intervals=True)
+    try:
+        future, metrics, intervals = forecast_and_validate(series, args.horizon, include_intervals=True)
+    except (ValueError, np.linalg.LinAlgError) as exc:
+        parser.error(str(exc))
     data_source = "user-supplied CSV" if args.input else "synthetic"
     metrics["data_source"] = data_source
     args.output.mkdir(parents=True, exist_ok=True)
