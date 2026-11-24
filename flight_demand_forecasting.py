@@ -39,6 +39,14 @@ def forecast_and_validate(series, horizon=6, include_intervals=False):
     baseline = train.iloc[-12:].to_numpy()
     model_mae = float(np.mean(np.abs(test.to_numpy()-backtest.to_numpy())))
     baseline_mae = float(np.mean(np.abs(test.to_numpy()-baseline)))
+    # Seasonal MASE uses training data only for its scale (monthly period = 12).
+    train_values = train.to_numpy()
+    mase_scale = float(np.mean(np.abs(train_values[12:] - train_values[:-12])))
+    if not np.isfinite(mase_scale):
+        raise ValueError("Training seasonal error scale must be finite")
+    scaled_errors = [model_mae / mase_scale, baseline_mae / mase_scale] if mase_scale > 0 else [None, None]
+    if mase_scale > 0 and not np.isfinite(scaled_errors).all():
+        raise ValueError("Scaled forecast errors must be finite")
     holdout_predictions = pd.DataFrame({
         "Date": test.index.strftime("%Y-%m-%d"),
         "actual_passengers": test.to_numpy(),
@@ -53,6 +61,11 @@ def forecast_and_validate(series, horizon=6, include_intervals=False):
     if not np.isfinite(intervals.to_numpy()).all():
         raise ValueError("Model returned non-finite forecast intervals")
     metrics = {"holdout_months":12, "arima_mae":round(model_mae,3),
+                    "mase_scale":mase_scale,
+                    "mase_seasonal_period":12,
+                    "mase_status":"available" if mase_scale > 0 else "undefined_zero_training_scale",
+                    "arima_mase":round(scaled_errors[0], 4) if mase_scale > 0 else None,
+                    "seasonal_naive_mase":round(scaled_errors[1], 4) if mase_scale > 0 else None,
                     "seasonal_naive_mae":round(baseline_mae,3),
                     "model_beats_baseline":model_mae < baseline_mae,
                     "holdout_predictions":holdout_predictions}
