@@ -31,6 +31,8 @@ The automated tests cover reproducibility and core validation/metrics. GitHub Ac
 
 ## Limits
 
+The metrics JSON includes seasonal mean absolute scaled error (MASE) for ARIMA and the seasonal-naive forecast. Each holdout MAE is divided by the mean absolute difference between training observations 12 months apart. The denominator uses training data only, and `mase_scale` records its unrounded value. Unlike MAE, MASE has no passenger-count units. A value below 1 means lower error than that in-training seasonal reference; it does not by itself mean ARIMA beat the held-out baseline. Use `model_beats_baseline` for that comparison. If the training scale is zero, both MASE values are JSON `null` and `mase_status` explains why. See the [forecasting textbook's scaled-error definition](https://otexts.com/fpp3/accuracy.html#scaled-errors).
+
 The generated figures and model scores demonstrate code behavior **only**. They are not real-world business improvements, production deployments, or evidence of predictive accuracy on actual organizations. More real-world validation, data quality checks, and monitoring are needed before deployment.
 
 ## Forecast uncertainty (new)
