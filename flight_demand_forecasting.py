@@ -30,12 +30,20 @@ def validate(series):
         raise ValueError("Dates must be consecutive unique month starts")
     return series
 
+def fit_converged(fitted):
+    """Return a JSON-safe optimizer status, or None when it is not reported."""
+    metadata = getattr(fitted, "mle_retvals", None)
+    value = metadata.get("converged") if isinstance(metadata, dict) else None
+    return bool(value) if isinstance(value, (bool, np.bool_)) else None
+
+
 def forecast_and_validate(series, horizon=6, include_intervals=False):
     if isinstance(horizon, bool) or not isinstance(horizon, Integral) or not 1 <= horizon <= 24:
         raise ValueError("horizon must be an integer between 1 and 24")
     series = validate(series)
     train, test = series.iloc[:-12], series.iloc[-12:]
-    backtest = ARIMA(train, order=(1,1,1)).fit().forecast(steps=12)
+    holdout_fit = ARIMA(train, order=(1,1,1)).fit()
+    backtest = holdout_fit.forecast(steps=12)
     baseline = train.iloc[-12:].to_numpy()
     model_mae = float(np.mean(np.abs(test.to_numpy()-backtest.to_numpy())))
     baseline_mae = float(np.mean(np.abs(test.to_numpy()-baseline)))
@@ -53,7 +61,8 @@ def forecast_and_validate(series, horizon=6, include_intervals=False):
         "arima_prediction": backtest.to_numpy(),
         "seasonal_naive_prediction": baseline,
     }).to_dict(orient="records")
-    prediction = ARIMA(series, order=(1,1,1)).fit().get_forecast(steps=horizon)
+    full_fit = ARIMA(series, order=(1,1,1)).fit()
+    prediction = full_fit.get_forecast(steps=horizon)
     future = prediction.predicted_mean
     bounds = prediction.conf_int(alpha=0.05)
     intervals = pd.DataFrame({"lower_95": bounds.iloc[:, 0].to_numpy(),
@@ -61,6 +70,8 @@ def forecast_and_validate(series, horizon=6, include_intervals=False):
     if not np.isfinite(intervals.to_numpy()).all():
         raise ValueError("Model returned non-finite forecast intervals")
     metrics = {"holdout_months":12, "arima_mae":round(model_mae,3),
+                    "fit_convergence":{"holdout":fit_converged(holdout_fit),
+                                       "full_history":fit_converged(full_fit)},
                     "mase_scale":mase_scale,
                     "mase_seasonal_period":12,
                     "mase_status":"available" if mase_scale > 0 else "undefined_zero_training_scale",
