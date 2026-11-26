@@ -19,6 +19,8 @@ The program writes generated artifacts under `outputs/` (ignored by Git). To ana
 
 CSV fields: `Date,Passengers (consecutive months)`. Read the input validation code before substituting your data. No company or customer information should be uploaded without permission.
 
+Header checks and parsing now use the same bounded UTF-8 snapshot (BOM supported). Duplicate headers, malformed quoting, and extra or missing cells are rejected before fitting. Blank lines and quoted commas are supported. The CSV parser also enforces its field-size safety limit. This prevents the file being changed between a separate validation read and the actual import.
+
 Input must be a plain, uncompressed CSV of at most 5 MiB. The program checks this limit before parsing or fitting a model. Extract compressed files yourself and check their size first. This keeps accidental large imports from using unbounded input memory; it is not a guarantee about model runtime.
 
 ## Technical approach

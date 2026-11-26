@@ -1,7 +1,8 @@
 """Reproducible monthly ARIMA forecasting with holdout and seasonal-naive baseline."""
 import argparse
+import csv
+from io import StringIO
 import json
-from io import BytesIO
 from pathlib import Path
 from numbers import Integral
 import numpy as np
@@ -10,6 +11,35 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
+
+def read_csv_snapshot(path):
+    """Validate and parse the same bounded UTF-8 CSV snapshot."""
+    maximum = 5 * 1024 * 1024
+    with path.open("rb") as source:
+        payload = source.read(maximum + 1)
+    if len(payload) > maximum:
+        raise ValueError(f"Input CSV exceeds the {maximum // (1024 * 1024)} MiB file-size limit")
+    try:
+        text = payload.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Input must be a plain UTF-8 CSV; extract compressed files first") from exc
+    header = None
+    try:
+        for row in csv.reader(StringIO(text), strict=True):
+            if not row or (len(row) == 1 and not row[0].strip()):
+                continue
+            if header is None:
+                header = row
+                if len(header) != len(set(header)):
+                    raise ValueError("CSV contains duplicate column names")
+            elif len(row) != len(header):
+                raise ValueError("CSV row width does not match the header")
+    except csv.Error as exc:
+        raise ValueError(f"Malformed CSV: {exc}") from exc
+    if header is None:
+        raise ValueError("Input CSV contains no header")
+    return pd.read_csv(StringIO(text), keep_default_na=False)
+
 
 def generate_data(seed=42, months=60):
     rng = np.random.default_rng(seed)
@@ -91,12 +121,7 @@ def main(argv=None):
             raise ValueError("Export would overwrite the input file; choose a different output directory")
     try:
         if args.input:
-            # Bound the bytes passed to pandas, including files that grow while read.
-            with args.input.open("rb") as source_file:
-                payload = source_file.read(5 * 1024 * 1024 + 1)
-            if len(payload) > 5 * 1024 * 1024:
-                raise ValueError("Input CSV must be at most 5 MiB; use a smaller monthly dataset")
-            df = pd.read_csv(BytesIO(payload), compression=None)
+            df = read_csv_snapshot(args.input)
             if not {"Date","Passengers"}.issubset(df.columns):
                 parser.error("CSV needs Date and Passengers")
             series = pd.Series(pd.to_numeric(df["Passengers"]).to_numpy(),
