@@ -1,5 +1,7 @@
 """Reproducible monthly ARIMA forecasting with holdout and seasonal-naive baseline."""
 import argparse
+import csv
+from io import StringIO
 import json
 from pathlib import Path
 from numbers import Integral
@@ -9,6 +11,35 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
+
+def read_csv_snapshot(path):
+    """Validate and parse the same bounded UTF-8 CSV snapshot."""
+    maximum = 5 * 1024 * 1024
+    with path.open("rb") as source:
+        payload = source.read(maximum + 1)
+    if len(payload) > maximum:
+        raise ValueError(f"Input CSV exceeds the {maximum // (1024 * 1024)} MiB file-size limit")
+    try:
+        text = payload.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Input must be a plain UTF-8 CSV; extract compressed files first") from exc
+    header = None
+    try:
+        for row in csv.reader(StringIO(text), strict=True):
+            if not row or (len(row) == 1 and not row[0].strip()):
+                continue
+            if header is None:
+                header = row
+                if len(header) != len(set(header)):
+                    raise ValueError("CSV contains duplicate column names")
+            elif len(row) != len(header):
+                raise ValueError("CSV row width does not match the header")
+    except csv.Error as exc:
+        raise ValueError(f"Malformed CSV: {exc}") from exc
+    if header is None:
+        raise ValueError("Input CSV contains no header")
+    return pd.read_csv(StringIO(text), keep_default_na=False)
+
 
 def generate_data(seed=42, months=60):
     rng = np.random.default_rng(seed)
@@ -29,7 +60,7 @@ def validate(series):
         raise ValueError("Dates must be consecutive unique month starts")
     return series
 
-def forecast_and_validate(series, horizon=6):
+def forecast_and_validate(series, horizon=6, include_intervals=False):
     if isinstance(horizon, bool) or not isinstance(horizon, Integral) or not 1 <= horizon <= 24:
         raise ValueError("horizon must be an integer between 1 and 24")
     series = validate(series)
@@ -38,17 +69,39 @@ def forecast_and_validate(series, horizon=6):
     baseline = train.iloc[-12:].to_numpy()
     model_mae = float(np.mean(np.abs(test.to_numpy()-backtest.to_numpy())))
     baseline_mae = float(np.mean(np.abs(test.to_numpy()-baseline)))
+    # Seasonal MASE uses training data only for its scale (monthly period = 12).
+    train_values = train.to_numpy()
+    mase_scale = float(np.mean(np.abs(train_values[12:] - train_values[:-12])))
+    if not np.isfinite(mase_scale):
+        raise ValueError("Training seasonal error scale must be finite")
+    scaled_errors = [model_mae / mase_scale, baseline_mae / mase_scale] if mase_scale > 0 else [None, None]
+    if mase_scale > 0 and not np.isfinite(scaled_errors).all():
+        raise ValueError("Scaled forecast errors must be finite")
     holdout_predictions = pd.DataFrame({
         "Date": test.index.strftime("%Y-%m-%d"),
         "actual_passengers": test.to_numpy(),
         "arima_prediction": backtest.to_numpy(),
         "seasonal_naive_prediction": baseline,
     }).to_dict(orient="records")
-    future = ARIMA(series, order=(1,1,1)).fit().forecast(steps=horizon)
-    return future, {"holdout_months":12, "arima_mae":round(model_mae,3),
+    prediction = ARIMA(series, order=(1,1,1)).fit().get_forecast(steps=horizon)
+    future = prediction.predicted_mean
+    bounds = prediction.conf_int(alpha=0.05)
+    intervals = pd.DataFrame({"lower_95": bounds.iloc[:, 0].to_numpy(),
+                              "upper_95": bounds.iloc[:, 1].to_numpy()}, index=future.index)
+    if not np.isfinite(intervals.to_numpy()).all():
+        raise ValueError("Model returned non-finite forecast intervals")
+    metrics = {"holdout_months":12, "arima_mae":round(model_mae,3),
+                    "mase_scale":mase_scale,
+                    "mase_seasonal_period":12,
+                    "mase_status":"available" if mase_scale > 0 else "undefined_zero_training_scale",
+                    "arima_mase":round(scaled_errors[0], 4) if mase_scale > 0 else None,
+                    "seasonal_naive_mase":round(scaled_errors[1], 4) if mase_scale > 0 else None,
                     "seasonal_naive_mae":round(baseline_mae,3),
                     "model_beats_baseline":model_mae < baseline_mae,
                     "holdout_predictions":holdout_predictions}
+    if include_intervals:
+        return future, metrics, intervals
+    return future, metrics
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -68,12 +121,7 @@ def main(argv=None):
             raise ValueError("Export would overwrite the input file; choose a different output directory")
     try:
         if args.input:
-            # Inspect original names before pandas adds suffixes to duplicate headers.
-            header = pd.read_csv(args.input, header=None, nrows=1, dtype=str,
-                                 keep_default_na=False).iloc[0].tolist()
-            if len(header) != len(set(header)):
-                raise ValueError("CSV contains duplicate column names; give each column a unique name")
-            df = pd.read_csv(args.input)
+            df = read_csv_snapshot(args.input)
             if not {"Date","Passengers"}.issubset(df.columns):
                 parser.error("CSV needs Date and Passengers")
             series = pd.Series(pd.to_numeric(df["Passengers"]).to_numpy(),
@@ -83,16 +131,21 @@ def main(argv=None):
         series = validate(series)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
-    future, metrics = forecast_and_validate(series, args.horizon)
+    future, metrics, intervals = forecast_and_validate(series, args.horizon, include_intervals=True)
     data_source = "user-supplied CSV" if args.input else "synthetic"
     metrics["data_source"] = data_source
     args.output.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(metrics.pop("holdout_predictions")).to_csv(args.output/"backtest.csv", index=False)
-    future.rename("predicted_passengers").to_csv(args.output/"forecast.csv", index_label="Date")
+    forecast_table = pd.DataFrame({"predicted_passengers": future.to_numpy(),
+                                   "lower_95": intervals["lower_95"].to_numpy(),
+                                   "upper_95": intervals["upper_95"].to_numpy()}, index=future.index)
+    forecast_table.to_csv(args.output/"forecast.csv", index_label="Date")
     (args.output/"backtest_metrics.json").write_text(json.dumps(metrics, indent=2)+"\n",encoding="utf-8")
     fig, ax = plt.subplots(figsize=(9, 4))
     series.plot(ax=ax, label="History")
     future.plot(ax=ax, label="ARIMA", style="--")
+    ax.fill_between(future.index, intervals["lower_95"], intervals["upper_95"],
+                    alpha=0.2, label="95% model interval")
     ax.set(title=f"Monthly demand ({data_source})", ylabel="Demand")
     ax.legend()
     fig.tight_layout()
